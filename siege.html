@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+<title>공성 입찰 전략</title>
+<style>
+:root{--bg:#0d1119;--card:#151c29;--line:#222c3d;--fg:#e6e9f0;--mut:#8d93a3;--gold:#f0c766;--red:#ff96a3;--grn:#7fd6a0;--blu:#8fb0e8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:14px}
+h1{font-size:19px;margin:0 0 4px}h2{font-size:15px;margin:0 0 8px}.sub{color:var(--mut);font-size:12.5px}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.kpi{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.kpi b{font-size:20px;display:block}.kpi .l{color:var(--mut);font-size:12px}.gold{color:var(--gold)}.red{color:var(--red)}.grn{color:var(--grn)}.blu{color:var(--blu)}
+input,textarea,button{font:inherit;color:inherit}input,textarea{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 11px;width:100%}
+button{background:rgba(192,143,31,.15);border:1px solid rgba(192,143,31,.5);color:var(--gold);border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:700}button.q{background:transparent;color:var(--mut);border-color:var(--line);font-weight:500}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}th{color:var(--mut);font-weight:600}
+svg{width:100%;height:auto;display:block}.leg{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mut)}.leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
+.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;border:1px solid var(--line);color:var(--mut)}.warn{color:var(--red);font-weight:700}
+#lock{max-width:380px;margin:80px auto}
+</style></head><body><div class="wrap">
+<div id="lock" class="card"><h1>🏰 공성 입찰 전략</h1><div class="sub">길드장 전용. 비밀번호를 입력하세요. 5회 틀리면 30분 잠깁니다.</div>
+<div class="row" style="margin-top:12px"><input id="pw" type="password" inputmode="numeric" placeholder="비밀번호" style="max-width:200px"><button id="go">열기</button></div><div id="lmsg" class="sub" style="margin-top:8px"></div></div>
+<div id="app" style="display:none"></div>
+</div>
+<script>
+const RECIPE={"철":20,"가죽":20,"보석":10,"축성수":4,"수련의 불꽃":1}, ITEMS=Object.keys(RECIPE), COL={"철":"#c9ced8","가죽":"#d49a6a","보석":"#5fd3e8","축성수":"#7fd6a0","수련의 불꽃":"#f0c766"};
+const T_HIDE=new Date("2026-10-17T23:00:00+09:00"), T_CLOSE=new Date("2026-10-18T00:00:00+09:00"), T_WAR=new Date("2026-10-18T20:00:00+09:00");
+const $=s=>document.querySelector(s), esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=n=>Number(n||0).toLocaleString("ko-KR"), f1=n=>Number(n||0).toLocaleString("ko-KR",{maximumFractionDigits:1}), f2=n=>Number(n||0).toLocaleString("ko-KR",{minimumFractionDigits:2,maximumFractionDigits:2});
+/* 군선혈맹 사이트판: Apps Script 웹앱 doPost 로 같은 API·같은 비밀번호 */
+const API_URL="https://script.google.com/macros/s/AKfycbxL0uAi8Kp2K_kR5qrSkvcvKbOx7PqUP35PPE-N2YAcV-ag9NcjmnFDSLK-42ZLp_m0tg/exec";
+const api=b=>fetch(API_URL,{method:"POST",body:JSON.stringify(b)}).then(r=>r.json());
+let STOK="", D=null, DUTY=null, PLAN_N=200, TAB="plan";
+try{const v=JSON.parse(localStorage.getItem("sg-page")||"null"); if(v&&v.stok&&v.exp>Date.now()) STOK=v.stok;}catch(_){}
+function left(t){const ms=t-Date.now(); if(ms<=0) return "종료"; const h=Math.floor(ms/3600000), m=Math.floor(ms%3600000/60000); return (h>=24?Math.floor(h/24)+"일 ":"")+(h%24)+"시간 "+m+"분";}
+function tsK(ts){return String(ts||"").slice(5,16).replace("T"," ");}
+// 같은 품목·같은 시각(30분 슬롯)에 여러 장(스크롤) 캡처하면 한 묶음으로 합친다. 완전히 같은 줄(수량·총액)은 중복으로 보고 하나만 센다.
+function slot(ts){const d=new Date(ts); d.setMinutes(d.getMinutes()<30?0:30,0,0); return d.getTime();}
+function groups(){const G={}; (D.mkt||[]).forEach(s=>{const k=s.i+"|"+slot(s.t); const g=G[k]||(G[k]={i:s.i,t:s.t,slot:slot(s.t),by:s.by,r:[],seen:{}}); if(s.t>g.t) g.t=s.t; (s.r||[]).forEach(r=>{const id=r[0]+":"+r[1]; if(g.seen[id]) return; g.seen[id]=1; g.r.push(r);});}); return Object.values(G).sort((a,b)=>a.slot-b.slot);}
+function snapStats(s){const rec=RECIPE[s.i]; const rows=(s.r||[]).map(r=>({qty:r[0],total:r[1],est:!!r[2],split:r[3]!==0,unit:r[1]/r[0]})).filter(r=>r.qty>0).sort((a,b)=>a.unit-b.unit);
+  const min=rows.length?rows[0].unit*rec:null; const coins=rows.reduce((a,r)=>a+r.qty,0)/rec; const cost=rows.reduce((a,r)=>a+r.total,0); return {rows,min,coins,avg:coins?cost/coins:null,est:rows.some(r=>r.est)};}
+function latest(){const L={}; groups().forEach(s=>{L[s.i]=s;}); return L;}
+function plan(N,budget,L){L=L||latest(); let units=[]; ITEMS.forEach(it=>{const s=L[it]; if(!s) return; snapStats(s).rows.forEach(r=>{const rec=RECIPE[it]; const c=Math.floor(r.qty/rec); if(c<1) return; units.push({it,unit:r.unit,cpc:r.unit*rec,coins:c,qtyAll:r.qty,split:r.split,total:r.total,rec});});});
+  units.sort((a,b)=>a.cpc-b.cpc); const out=[]; let got=0,spent=0;
+  for(const u of units){ if(N&&got>=N) break; let take=u.coins; if(N) take=Math.min(take,N-got); if(!u.split) take=u.coins; const cost=u.split?take*u.rec*u.unit:u.total; if(budget&&spent+cost>budget){ if(!u.split) continue; take=Math.floor((budget-spent)/(u.rec*u.unit)); if(take<1) continue; }
+    const cost2=u.split?take*u.rec*u.unit:u.total; out.push({it:u.it,unit:u.unit,cpc:u.cpc,coins:take,qty:u.split?take*u.rec:u.qtyAll,cost:cost2,split:u.split}); got+=take; spent+=cost2; }
+  return {out,got,spent};}
+// ── 시각화 (v97.6) ─────────────────────────────────────────────────────────
+function lineChart(series,opt){ opt=opt||{}; // series:[{name,color,pts:[[t,v]]}] · 마지막 값 라벨 · 툴팁 · 점선 기준선(opt.ref=[{v,label}])
+  const W=opt.w||900,H=opt.h||260,P={l:opt.w?44:50,r:opt.legend===false?20:110,t:opt.labels===false?14:30,b:30}; const all=series.flatMap(s=>s.pts); if(!all.length) return '<div class="sub">아직 데이터가 없어요.</div>';
+  const xs=all.map(p=>p[0]), ys=all.map(p=>p[1]); let x0=Math.min(...xs),x1=Math.max(...xs); if(x1===x0){x0-=1800000;x1+=1800000;} if(opt.labels!==false){ const pad=(x1-x0)*0.05; x0-=pad; x1+=pad; } let y0=opt.zero===false?Math.min(...ys)*0.85:0, y1=Math.max(...ys,...(opt.ref||[]).map(r=>r.v))*1.12||1; if(y1<=y0) y1=y0+1;
+  const X=t=>P.l+(t-x0)/(x1-x0)*(W-P.l-P.r), Y=v=>H-P.b-(v-y0)/(y1-y0)*(H-P.t-P.b); let g='';
+  for(let i=0;i<=4;i++){const v=y0+(y1-y0)*i/4; g+=`<line x1="${P.l}" x2="${W-P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#222c3d"/><text x="${P.l-6}" y="${Y(v)+4}" fill="#8d93a3" font-size="11" text-anchor="end">${f1(v)}</text>`;}
+  const span=x1-x0; const slots=(opt.slots&&opt.slots.length)?opt.slots.slice().sort((a,b)=>a-b):null;
+  if(slots){ const step=Math.ceil(slots.length/14); let lastDay=""; slots.forEach((t,i)=>{ const d=new Date(t); g+=`<line x1="${X(t)}" x2="${X(t)}" y1="${P.t}" y2="${H-P.b}" stroke="#222c3d" stroke-dasharray="2 4"/>`; if(i%step) return; const day=(d.getMonth()+1)+"/"+d.getDate(); const lab=(day!==lastDay?day+" ":"")+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); lastDay=day; g+=`<text x="${X(t)}" y="${H-8}" fill="#c9ced8" font-size="11" text-anchor="middle">${lab}</text>`; }); }
+  else { const nt=Math.min(8,Math.max(2,Math.round(span/1800000))); for(let i=0;i<=nt;i++){const t=x0+span*i/nt; const d=new Date(t); g+=`<text x="${X(t)}" y="${H-8}" fill="#8d93a3" font-size="11" text-anchor="middle">${span>86400000?(d.getMonth()+1)+"/"+d.getDate()+" ":""}${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}</text>`;} }
+  (opt.ref||[]).forEach(r=>{ g+=`<line x1="${P.l}" x2="${W-P.r}" y1="${Y(r.v)}" y2="${Y(r.v)}" stroke="${r.color||'#ff96a3'}" stroke-dasharray="4 4"/><text x="${P.l+4}" y="${Y(r.v)-4}" fill="${r.color||'#ff96a3'}" font-size="11">${esc(r.label)}</text>`; });
+  const lastYs=[], lab=[];
+  series.forEach(s=>{ if(!s.pts.length) return; const pts=s.pts.slice().sort((a,b)=>a[0]-b[0]); const d=pts.map((p,i)=>(i?"L":"M")+X(p[0]).toFixed(1)+" "+Y(p[1]).toFixed(1)).join(" ");
+    if(opt.labels!==false&&pts.length<=24) pts.forEach((p,i)=>{ if(opt.legend!==false&&i===pts.length-1) return; lab.push({x:X(p[0]),y:Y(p[1]),v:p[1],color:s.color,d:(i&&pts[i-1][1])?(p[1]-pts[i-1][1])/pts[i-1][1]*100:null}); });
+    if(opt.area) g+=`<path d="${d} L${X(pts[pts.length-1][0]).toFixed(1)} ${Y(0)} L${X(pts[0][0]).toFixed(1)} ${Y(0)} Z" fill="${s.color}" opacity=".08"/>`;
+    g+=`<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.2"/>`+pts.map(p=>`<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="3" fill="${s.color}"><title>${esc(s.name)} · ${tsK(new Date(p[0]).toISOString().replace("Z",""))} · ${f2(p[1])}</title></circle>`).join("");
+    if(opt.legend===false) return; const last=pts[pts.length-1]; let ly=Y(last[1]); while(lastYs.some(v=>Math.abs(v-ly)<12)) ly+=12; lastYs.push(ly);
+    const pv=pts.length>1?pts[pts.length-2][1]:null; const dp=(pv!=null&&pv)?(last[1]-pv)/pv*100:null; const dgood=dp==null?null:(opt.invert?dp>0:dp<0);
+    g+=`<text x="${W-P.r+6}" y="${ly+4}" fill="${s.color}" font-size="11.5" font-weight="700">${esc(s.name)} ${f1(last[1])}${dp!=null&&Math.abs(dp)>=0.05?` <tspan fill="${dgood?'#7fd6a0':'#ff96a3'}" font-size="10.5">${dp>0?'▲':'▼'}${Math.abs(dp).toFixed(1)}%</tspan>`:''}</text>`; });
+  // 점 라벨(값 + 직전 캡처 대비 %) — 같은 시각에 겹치면 위에서부터 22px 간격으로 밀어냄
+  const byX={}; lab.forEach(l=>{ const k=Math.round(l.x); (byX[k]=byX[k]||[]).push(l); });
+  Object.values(byX).forEach(arr=>{ arr.sort((a,b)=>a.y-b.y); let last=-1e9; arr.forEach(l=>{ let ly=Math.max(l.y-8,P.t+(l.d!=null?12:2)); if(ly-last<22) ly=last+22; l.ly=ly; last=ly; }); });
+  const halo='paint-order="stroke" stroke="#0d1119" stroke-width="3"';
+  lab.forEach(l=>{ g+=`<text x="${l.x}" y="${l.ly}" fill="${l.color}" font-size="10.5" font-weight="700" text-anchor="middle" ${halo}>${f1(l.v)}</text>`; if(l.d!=null&&Math.abs(l.d)>=0.05){ const good=opt.invert?l.d>0:l.d<0; g+=`<text x="${l.x}" y="${l.ly-10}" fill="${good?'#7fd6a0':'#ff96a3'}" font-size="9.5" font-weight="700" text-anchor="middle" ${halo}>${l.d>0?'▲':'▼'}${Math.abs(l.d).toFixed(1)}%</text>`; } });
+  return `<svg viewBox="0 0 ${W} ${H}">${g}</svg>`;}
+function smallMultiples(byItem,SL,key,opt){ // 재료별 작은 추이 차트 5개 — 점마다 값·직전 대비 % 표기
+  return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(440px,1fr));gap:12px">${ITEMS.map(it=>{ const pts=byItem(it).filter(x=>x.st[key]!=null).map(x=>[x.t,x.st[key]]); if(!pts.length) return ''; const vs=pts.map(p=>p[1]); const last=vs[vs.length-1], mn=Math.min(...vs), mx=Math.max(...vs);
+    return `<div style="background:rgba(255,255,255,.02);border:1px solid var(--line);border-radius:12px;padding:8px 10px"><div class="row" style="justify-content:space-between"><b style="color:${COL[it]}">${esc(it)}</b><span class="sub">지금 <b style="color:var(--fg)">${f1(last)}${opt.unit||""}</b> · 최저 ${f1(mn)} · 최고 ${f1(mx)} · ${delta(last,vs.length>1?vs[vs.length-2]:null,opt.invert)}</span></div>${lineChart([{name:it,color:COL[it],pts}],{w:450,h:200,slots:SL,legend:false,zero:false,invert:opt.invert,area:opt.area})}</div>`; }).join("")}</div>`;}
+function costBars(rowsC){ // 주화 1개 원가 — 재료별 가로 막대 + 가격 표시 + 30분 전 원가 눈금
+  const rs=rowsC.filter(r=>r.st&&r.st.min!=null).sort((a,b)=>a.st.min-b.st.min); if(!rs.length) return '';
+  const mx=Math.max(...rs.map(r=>Math.max(r.st.min,(r.prev&&r.prev.min)||0)))*1.08||1; const W=900,BH=30,GAP=12,L=116,R=190,H=rs.length*(BH+GAP)+GAP+22; const X=v=>L+v/mx*(W-L-R); let g='';
+  for(let i=0;i<=4;i++){ const v=mx*i/4; g+=`<line x1="${X(v)}" x2="${X(v)}" y1="${GAP-4}" y2="${H-20}" stroke="#222c3d"/><text x="${X(v)}" y="${H-6}" fill="#8d93a3" font-size="11" text-anchor="middle">${f1(v)}💎</text>`; }
+  rs.forEach((r,i)=>{ const y=GAP+i*(BH+GAP); const pv=r.prev?r.prev.min:null; const bw=X(r.st.min)-L;
+    g+=`<text x="${L-8}" y="${y+BH/2+4}" fill="${COL[r.it]}" font-size="12.5" font-weight="700" text-anchor="end">${i===0?"⭐ ":""}${esc(r.it)}</text><rect x="${L}" y="${y}" width="${bw}" height="${BH}" rx="6" fill="${COL[r.it]}" opacity="${i===0?1:.6}"><title>${esc(r.it)} ${RECIPE[r.it]}개 × ${f2(r.st.rows[0].unit)}💎 = ${f1(r.st.min)}💎</title></rect>`;
+    if(bw>120) g+=`<text x="${L+8}" y="${y+BH/2+4}" fill="#0d1119" font-size="11" font-weight="700">${RECIPE[r.it]}개 × ${f2(r.st.rows[0].unit)}</text>`;
+    g+=`<text x="${X(Math.max(r.st.min,pv||0))+8}" y="${y+BH/2+4}" fill="#e6e9f0" font-size="13" font-weight="700">${f1(r.st.min)}💎</text>`;
+    if(pv!=null){ g+=`<line x1="${X(pv)}" x2="${X(pv)}" y1="${y-4}" y2="${y+BH+4}" stroke="#e6e9f0" stroke-width="2" stroke-dasharray="3 2"><title>30분 전 ${f1(pv)}💎</title></line>`; const p=(r.st.min-pv)/pv*100; const txt=Math.abs(p)<0.05?'= 0%':(p>0?'▲':'▼')+Math.abs(p).toFixed(1)+'%'; g+=`<text x="${W-4}" y="${y+BH/2+4}" fill="${Math.abs(p)<0.05?'#8d93a3':(p<0?'#7fd6a0':'#ff96a3')}" font-size="11.5" font-weight="700" text-anchor="end">30분 전 ${f1(pv)} ${txt}</text>`; } });
+  return `<svg viewBox="0 0 ${W} ${H}">${g}</svg><div class="sub">막대 = 주화 1개 원가(레시피 수량 × 최저 개당가) · 점선 눈금 = 30분 전 원가 · ⭐ = 지금 가장 싼 재료</div>`;}
+function costTimeline(G,N){ // 구매 시점별 — 그 시각 매물로 주화 N개 만들 때 총 비용(재료별 쌓은 막대) + 평균 원가(선)
+  const slots=[...new Set(G.map(s=>s.slot))].sort((a,b)=>a-b); if(!slots.length) return '';
+  const rows=slots.map(sl=>{ const L={}; G.filter(x=>x.slot===sl).forEach(x=>{L[x.i]=x;}); const P=plan(N,0,L); const by={}; P.out.forEach(u=>{by[u.it]=(by[u.it]||0)+u.cost;}); return {slot:sl,got:P.got,cost:P.spent,ok:P.got>=N,avg:P.got?P.spent/P.got:null,by}; });
+  const ok=rows.filter(r=>r.ok); const best=ok.length?ok.reduce((a,b)=>b.cost<a.cost?b:a):null; const cur=rows[rows.length-1]; const tl=t=>{const d=new Date(t); return (d.getMonth()+1)+"/"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");};
+  const W=900,H=300,P={l:70,r:20,t:44,b:30}; const n=rows.length; const cw=(W-P.l-P.r)/n; const bw=Math.min(56,cw*0.62);
+  const mxC=Math.max(...rows.map(r=>r.cost))*1.2||1; const Y=v=>H-P.b-v/mxC*(H-P.t-P.b), X=i=>P.l+cw*(i+0.5); const halo='paint-order="stroke" stroke="#0d1119" stroke-width="3"'; let g='';
+  for(let i=0;i<=4;i++){ const v=mxC*i/4; g+=`<line x1="${P.l}" x2="${W-P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#222c3d"/><text x="${P.l-6}" y="${Y(v)+4}" fill="#f0c766" font-size="11" text-anchor="end">${fmt(Math.round(v))}</text>`; }
+  g+=`<text x="${P.l-6}" y="${P.t-24}" fill="#f0c766" font-size="11" text-anchor="end">총 비용💎</text><text x="${P.l+4}" y="${P.t-24}" fill="#8d93a3" font-size="11">막대 위 = 총 비용(직전 캡처 대비 %) · 막대 안 = 평균 원가/개 · 색 = 재료별 비용</text>`;
+  const step=Math.ceil(n/14); let lastDay="";
+  rows.forEach((r,i)=>{ const x=X(i); let y=Y(0); ITEMS.forEach(it=>{ const c=r.by[it]; if(!c) return; const h=Y(0)-Y(c); g+=`<rect x="${x-bw/2}" y="${y-h}" width="${bw}" height="${h}" fill="${COL[it]}" opacity="${r.ok?.9:.35}"><title>${tl(r.slot)} · ${esc(it)} ${fmt(Math.round(c))}💎</title></rect>`; y-=h; });
+    const pv=i?rows[i-1]:null; const dp=(pv&&pv.cost)?(r.cost-pv.cost)/pv.cost*100:null;
+    if(best&&r.slot===best.slot) g+=`<text x="${x}" y="${Y(r.cost)-(dp!=null?34:22)}" font-size="13" text-anchor="middle">⭐</text>`;
+    if(dp!=null&&Math.abs(dp)>=0.05) g+=`<text x="${x}" y="${Y(r.cost)-18}" fill="${dp<0?'#7fd6a0':'#ff96a3'}" font-size="10.5" font-weight="700" text-anchor="middle" ${halo}>${dp>0?'▲':'▼'}${Math.abs(dp).toFixed(1)}%</text>`;
+    g+=`<text x="${x}" y="${Y(r.cost)-6}" fill="#f0c766" font-size="12" font-weight="700" text-anchor="middle" ${halo}>${fmt(Math.round(r.cost))}${r.ok?"":"*"}</text>`;
+    if(r.avg!=null&&Y(0)-Y(r.cost)>22) g+=`<text x="${x}" y="${Y(r.cost)+15}" fill="#e6e9f0" font-size="10.5" font-weight="700" text-anchor="middle" ${halo}>${f1(r.avg)}/개</text>`;
+    if(i%step===0){ const d=new Date(r.slot); const day=(d.getMonth()+1)+"/"+d.getDate(); g+=`<text x="${x}" y="${H-8}" fill="#c9ced8" font-size="11" text-anchor="middle">${(day!==lastDay?day+" ":"")+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}</text>`; lastDay=day; } });
+  let html=`<div style="margin-top:14px;font-size:13px;font-weight:700">⏱ 구매 시점별 비용 — 각 캡처 시각의 매물로 주화 ${fmt(N)}개를 만들었다면</div><svg viewBox="0 0 ${W} ${H}">${g}</svg>`;
+  if(best&&cur){ const diff=cur.cost-best.cost; html+=`<div class="sub">${best.slot===cur.slot?`지금(${tl(cur.slot)})이 기록 중 가장 쌉니다 — ${fmt(Math.round(cur.cost))}💎.`:`가장 쌌던 시점 ⭐ ${tl(best.slot)} ${fmt(Math.round(best.cost))}💎 · 지금(${tl(cur.slot)}) ${fmt(Math.round(cur.cost))}💎 → 지금이 <b style="color:${diff>0?'var(--red)':'var(--grn)'}">${fmt(Math.round(Math.abs(diff)))}💎 ${diff>0?'더 비쌈':'더 쌈'}</b>`}${rows.some(r=>!r.ok)?' · * 표시는 그 시각 매물로는 '+fmt(N)+'개를 못 채운 경우(만든 만큼의 비용)':''}</div>`; }
+  html+='<div style="overflow-x:auto"><table style="margin-top:8px"><tr><th>캡처 시각</th><th>총 비용</th><th>직전 대비</th><th>평균 원가</th><th>직전 대비</th><th>만들 수 있는 수</th><th>재료별 비용</th></tr>';
+  rows.slice().reverse().forEach((r,idx,arr)=>{ const pv=arr[idx+1]; html+=`<tr${best&&r.slot===best.slot?' style="color:var(--gold);font-weight:700"':''}><td>${best&&r.slot===best.slot?"⭐ ":""}${tl(r.slot)}</td><td class="gold" style="font-weight:700">${fmt(Math.round(r.cost))}💎${r.ok?"":"*"}</td><td>${pv?delta(r.cost,pv.cost):'<span class="sub">—</span>'}</td><td>${r.avg!=null?f1(r.avg)+"💎/개":"—"}</td><td>${pv&&pv.avg!=null?delta(r.avg,pv.avg):'<span class="sub">—</span>'}</td><td class="${r.ok?'grn':'red'}">${fmt(Math.round(r.got))}개</td><td style="text-align:left;white-space:normal">${ITEMS.filter(it=>r.by[it]).map(it=>`<span style="color:${COL[it]}">${esc(it)} ${fmt(Math.round(r.by[it]))}</span>`).join(" · ")}</td></tr>`; });
+  return html+'</table></div>';}
+function spark(vals,color){ if(!vals||vals.length<2) return ''; const W=90,H=24; const mn=Math.min(...vals),mx=Math.max(...vals); const Y=v=>mx===mn?H/2:H-2-(v-mn)/(mx-mn)*(H-4); const d=vals.map((v,i)=>(i?"L":"M")+(i/(vals.length-1)*W).toFixed(1)+" "+Y(v).toFixed(1)).join(" "); return `<svg viewBox="0 0 ${W} ${H}" style="width:90px;height:24px;vertical-align:middle"><path d="${d}" fill="none" stroke="${color}" stroke-width="1.6"/><circle cx="${W}" cy="${Y(vals[vals.length-1])}" r="2.2" fill="${color}"/></svg>`;}
+function delta(cur,prev,invert){ if(cur==null||prev==null||!prev) return '<span class="sub">—</span>'; const p=(cur-prev)/prev*100; if(Math.abs(p)<0.05) return '<span class="sub">= 0%</span>'; const up=p>0; const good=invert?up:!up; return `<span style="color:${good?'var(--grn)':'var(--red)'};font-weight:700">${up?'▲':'▼'} ${Math.abs(p).toFixed(1)}%</span>`;}
+function supplyCurve(){ // 싼 매물부터 차례로 산다고 할 때 — ① 구매 순서 띠 ② N개 만들 때 총비용 곡선 ③ 지점별 표
+  const L=latest(); let units=[]; ITEMS.forEach(it=>{const s=L[it]; if(!s) return; snapStats(s).rows.forEach(r=>{const c=r.qty/RECIPE[it]; if(c<=0) return; units.push({it,cpc:r.unit*RECIPE[it],coins:c});});});
+  units.sort((a,b)=>a.cpc-b.cpc); if(!units.length) return '<div class="sub">아직 데이터가 없어요.</div>';
+  const tot=units.reduce((a,u)=>a+u.coins,0);
+  // 같은 재료가 이어지는 구간으로 묶기
+  const segs=[]; units.forEach(u=>{ const l=segs[segs.length-1]; if(l&&l.it===u.it){ l.coins+=u.coins; l.cost+=u.coins*u.cpc; l.max=u.cpc; } else segs.push({it:u.it,coins:u.coins,cost:u.coins*u.cpc,min:u.cpc,max:u.cpc}); });
+  let html='<div style="display:flex;height:46px;border-radius:10px;overflow:hidden;border:1px solid var(--line)">';
+  segs.forEach(sg=>{ const w=sg.coins/tot*100; html+=`<div style="width:${w}%;background:${COL[sg.it]};display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;color:#0d1119;white-space:nowrap;overflow:hidden" title="${esc(sg.it)} ${fmt(Math.round(sg.coins))}개분 · 개당 ${f1(sg.min)}~${f1(sg.max)}💎 · ${fmt(Math.round(sg.cost))}💎">${w>9?esc(sg.it)+" "+fmt(Math.round(sg.coins))+"개":""}</div>`; });
+  html+='</div><div class="sub" style="margin-top:4px">← 먼저 살 것 (싸다) &nbsp;·&nbsp; 나중에 살 것 (비싸다) →</div>';
+  // 누적 비용 곡선
+  const W=900,H=240,P={l:64,r:20,t:16,b:30}; const pts=[[0,0]]; let acc=0,cost=0; units.forEach(u=>{acc+=u.coins;cost+=u.coins*u.cpc;pts.push([acc,cost]);});
+  const X=c=>P.l+c/tot*(W-P.l-P.r), Y=v=>H-P.b-v/cost*(H-P.t-P.b); let g='';
+  for(let i=0;i<=4;i++){const v=cost*i/4; g+=`<line x1="${P.l}" x2="${W-P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#222c3d"/><text x="${P.l-6}" y="${Y(v)+4}" fill="#8d93a3" font-size="11" text-anchor="end">${fmt(Math.round(v))}💎</text>`;}
+  let xs=0; segs.forEach(sg=>{ g+=`<rect x="${X(xs)}" y="${P.t}" width="${X(xs+sg.coins)-X(xs)}" height="${H-P.t-P.b}" fill="${COL[sg.it]}" opacity=".10"/>`; xs+=sg.coins; });
+  const d=pts.map((p,i)=>(i?"L":"M")+X(p[0]).toFixed(1)+" "+Y(p[1]).toFixed(1)).join(" "); g+=`<path d="${d}" fill="none" stroke="#f0c766" stroke-width="2.5"/>`;
+  const marks=[100,200,300,500,800,1000,1500,2000].filter(m=>m<=tot); const atCost=m=>{ let a=0,c=0; for(const u of units){ if(a+u.coins>=m) return c+(m-a)*u.cpc; a+=u.coins; c+=u.coins*u.cpc; } return c; };
+  const mix=m=>{ let a=0; const o={}; for(const u of units){ const take=Math.min(u.coins,m-a); if(take<=0) break; o[u.it]=(o[u.it]||0)+take; a+=take; } return Object.keys(o).map(k=>k+" "+fmt(Math.round(o[k]))).join(" · "); };
+  marks.forEach(m=>{ const c=atCost(m); g+=`<circle cx="${X(m)}" cy="${Y(c)}" r="4" fill="#0d1119" stroke="#f0c766" stroke-width="2"/><text x="${X(m)}" y="${H-10}" fill="#f0c766" font-size="11.5" font-weight="700" text-anchor="middle">${m}개</text>`; });
+  g+=`<text x="${W-P.r}" y="${H-10}" fill="#8d93a3" font-size="11" text-anchor="end">전체 ${fmt(Math.round(tot))}개</text>`;
+  html+=`<div style="margin-top:12px;font-size:13px;font-weight:700">주화 N개 만들 때 총비용 — 선이 가파를수록 비싼 구간</div><svg viewBox="0 0 ${W} ${H}">${g}</svg>`;
+  // 표
+  html+=`<div style="overflow-x:auto"><table style="margin-top:6px"><tr><th>목표</th><th>총 비용</th><th>평균 원가</th><th>재료 구성(주화 환산)</th></tr>${marks.map(m=>{const c=atCost(m); return `<tr><td>${fmt(m)}개</td><td class="gold" style="font-weight:700">${fmt(Math.round(c))}💎</td><td>${f1(c/m)}💎/개</td><td style="text-align:left;white-space:normal">${esc(mix(m))}</td></tr>`;}).join("")}<tr><td>전체 ${fmt(Math.round(tot))}개</td><td class="gold" style="font-weight:700">${fmt(Math.round(cost))}💎</td><td>${f1(cost/tot)}💎/개</td><td style="text-align:left;white-space:normal">${esc(mix(tot))}</td></tr></table></div>`;
+  return html;}
+function ladder(it){ // 재료 하나의 현재 호가 사다리 — 막대 높이 = 주화 환산 수량, 라벨 = 개당가
+  const L=latest(); const s=L[it]; if(!s) return `<div class="sub">${esc(it)}: 캡처 없음</div>`; const rows=snapStats(s).rows.slice(0,10); const W=420,H=150,P={l:8,r:8,t:22,b:22}; const n=rows.length; const bw=(W-P.l-P.r)/n; const mx=Math.max(...rows.map(r=>r.qty))/RECIPE[it]||1; let g='';
+  rows.forEach((r,i)=>{ const c=r.qty/RECIPE[it]; const h=c/mx*(H-P.t-P.b); const x=P.l+i*bw; g+=`<rect x="${x+2}" y="${H-P.b-h}" width="${bw-4}" height="${h}" rx="3" fill="${COL[it]}" opacity="${r.est?.5:.85}"><title>개당 ${f2(r.unit)} · ${fmt(r.qty)}개(주화 ${f1(c)}개분) · ${fmt(r.total)}💎${r.split?'':' · 전량만'}</title></rect><text x="${x+bw/2}" y="${H-P.b-h-5}" fill="#e6e9f0" font-size="10.5" text-anchor="middle">${f2(r.unit)}</text><text x="${x+bw/2}" y="${H-7}" fill="#8d93a3" font-size="10" text-anchor="middle">${f1(c)}개</text>`; });
+  return `<div style="font-size:12.5px;font-weight:700;margin-bottom:2px"><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${COL[it]};margin-right:5px"></i>${esc(it)} <span class="sub">(레시피 ${RECIPE[it]}개 → 최저 원가 ${f1(rows[0].unit*RECIPE[it])}💎)</span></div><svg viewBox="0 0 ${W} ${H}">${g}</svg>`;}
+function timeTable(G){ // 캡처 슬롯(30분)별 — 재료별 최저 개당가(이전 슬롯 대비 ▲▼) · 보이는 매물 총량 · 최저 원가 · 300개 비용
+  const slots=[...new Set(G.map(s=>s.slot))].sort((a,b)=>a-b); if(!slots.length) return '<div class="sub">아직 데이터가 없어요.</div>';
+  const rows=slots.map(sl=>{ const o={slot:sl,items:{},coins:0,by:new Set()}; ITEMS.forEach(it=>{ const g=G.find(x=>x.slot===sl&&x.i===it); if(!g) return; const st=snapStats(g); o.items[it]=st; o.coins+=st.coins; if(g.by) o.by.add(g.by); });
+    // 그 시각 매물만으로 300개 만들 때 비용
+    let units=[]; ITEMS.forEach(it=>{ const st=o.items[it]; if(!st) return; st.rows.forEach(r=>units.push({cpc:r.unit*RECIPE[it],coins:r.qty/RECIPE[it]})); }); units.sort((a,b)=>a.cpc-b.cpc); let a=0,c=0; for(const u of units){ const t=Math.min(u.coins,300-a); if(t<=0) break; a+=t; c+=t*u.cpc; } o.c300=a>=300?c:null; o.got=a;
+    const mins=ITEMS.map(it=>o.items[it]?o.items[it].min:null).filter(v=>v!=null); o.best=mins.length?Math.min(...mins):null; return o; });
+  let h='<div style="overflow-x:auto"><table><tr><th>캡처 시각</th>'+ITEMS.map(it=>`<th style="color:${COL[it]}">${esc(it)} 개당</th>`).join("")+'<th>최저 원가</th><th>보이는 매물</th><th>300개 비용</th><th>올린 사람</th></tr>';
+  rows.slice().reverse().forEach((r,idx,arr)=>{ const prev=arr[idx+1]; const d=new Date(r.slot); const lab=(d.getMonth()+1)+"/"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+    h+=`<tr><td style="font-weight:700">${lab}</td>`+ITEMS.map(it=>{ const st=r.items[it]; if(!st) return '<td class="sub">—</td>'; const pv=prev&&prev.items[it]?prev.items[it].rows[0].unit:null; return `<td>${f2(st.rows[0].unit)} <span style="font-size:11px">${pv!=null?delta(st.rows[0].unit,pv):''}</span></td>`; }).join("")
+      +`<td class="gold" style="font-weight:700">${r.best!=null?f1(r.best)+"💎":"—"}</td><td>${fmt(Math.round(r.coins))}개 <span style="font-size:11px">${prev?delta(r.coins,prev.coins,true):''}</span></td><td>${r.c300!=null?fmt(Math.round(r.c300))+"💎":'<span class="sub">부족('+fmt(Math.round(r.got))+'개)</span>'}</td><td class="sub">${esc([...r.by].join(", "))}</td></tr>`; });
+  return h+'</table></div><div class="sub" style="margin-top:6px">▲▼는 바로 앞 캡처와 비교. 개당가는 내려가면 초록, 매물량은 늘어나면 초록. 「300개 비용」은 그 시각에 보이던 매물만으로 계산.</div>';}
+// ── 📸 시세 캡처 당번표 (v97.6) — 운영진이 콘솔에서 적는 당번·인증을 읽기 전용으로 보여준다
+function dutyKey(t){const s=new Date(t).toLocaleString("sv-SE",{timeZone:"Asia/Seoul"}); return s.slice(0,10)+"T"+s.slice(11,13);}
+function dutyCard(){ if(!DUTY) return ""; const J=DUTY, step=Number(J.duty.step)===1?1:2, SL=J.duty.slots||{}, AU=J.auto||{}; const t0=new Date(J.start+":00:00+09:00").getTime(), t1=new Date(J.end+":00:00+09:00").getTime(); const cur=dutyKey(Date.now());
+  const DOW=["일","월","화","수","목","금","토"], days={}; let nA=0,nD=0,nMiss=0,nUp=0;
+  for(let t=t0;t<=t1;t+=step*3600000){ const k=dutyKey(t), o=SL[k]; let n=0; const by={}; for(let i=0;i<step;i++){const a=AU[dutyKey(t+i*3600000)]; if(a){n+=Number(a.n)||0;(a.by||[]).forEach(x=>by[x]=1);}}
+    const now=k===cur||(step===2&&dutyKey(t+3600000)===cur), past=k<cur&&!now; if(o){nA++; if(o.done) nD++; else if(past&&!n) nMiss++;} else if(!past) nUp++;
+    const d=k.slice(0,10); (days[d]=days[d]||[]).push({k,o,n,by:Object.keys(by),past,now}); }
+  let h=`<div class="card"><h2>📸 시세 캡처 당번표 <span class="tag">${step}시간 간격</span></h2><div class="sub">운영진이 콘솔 🏰 공성 준비 ▸ 📸 캡처 당번표 에서 담당·인증을 적습니다 (여기선 보기만) · 담당 <b>${nA}</b>칸 · 인증 ✅ <b>${nD}</b>칸${nMiss?` · <span class="red">지났는데 미인증 ${nMiss}칸</span>`:""} · 앞으로 빈칸 ${nUp} · 📷 = 케이봇이 판독한 캡처 장수</div>`;
+  h+=`<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:10px;align-items:start">`;
+  for(const d of Object.keys(days)){ const dt=new Date(d+"T00:00:00+09:00"); const rows=days[d].filter(r=>!(r.past&&!r.o)); if(!rows.length) continue;
+    h+=`<div><div style="font-weight:700;margin:4px 0">${d.slice(5).replace("-","/")} (${DOW[dt.getDay()]})${d===J.end.slice(0,10)?' <span class="sub">입찰 종료</span>':""}</div><table><tr><th>시각</th><th style="text-align:left">담당</th><th>인증</th><th>📷</th></tr>`;
+    for(const r of rows){ const o=r.o; h+=`<tr style="${r.past?"opacity:.6;":""}${r.now?"background:rgba(240,199,102,.08)":""}"><td>${r.k.slice(11)}:00${r.now?' <span class="tag">지금</span>':""}</td><td style="text-align:left">${o?esc(o.nick):'<span class="sub">—</span>'}</td><td>${o?(o.done?`<span class="grn">✅ ${esc(String(o.dts||"").slice(11,16))}</span>`:(r.n?'<span class="grn">📷 확인됨</span>':r.past?'<span class="red">미인증</span>':'<span class="sub">대기</span>')):""}</td><td>${r.n?`<span class="grn">${r.n}장</span>${r.by.length?` <span class="sub">${esc(r.by.join(","))}</span>`:""}`:'<span class="sub">—</span>'}</td></tr>`; }
+    h+=`</table></div>`; }
+  return h+`</div></div>`;
+}
+function render(){ const A=$("#app"); if(!D){A.innerHTML='<div class="card sub">불러오는 중…</div>';return;}
+  const L=latest(); const G=groups(); const B=(D.bids||[]).slice(-1)[0]; const ours=B&&(B.ranks||[]).find(r=>/선고|군림|MZ/.test(r.name||""));
+  const third=B&&(B.ranks||[]).find(r=>r.rank===3), fourth=B&&(B.ranks||[]).find(r=>r.rank===4);
+  const byItem=it=>G.filter(s=>s.i===it).map(x=>({t:x.slot,st:snapStats(x)}));
+  const rowsC=ITEMS.map(it=>{const s=L[it]; if(!s) return {it}; const hist=byItem(it); const prev=hist.length>1?hist[hist.length-2].st:null; return {it,st:snapStats(s),s,prev,hist};}); const best=rowsC.filter(r=>r.st&&r.st.min!=null).sort((a,b)=>a.st.min-b.st.min)[0];
+  const bestPrev=best&&best.prev?best.prev.min:null; const totCoins=rowsC.reduce((a,r)=>a+(r.st?r.st.coins:0),0); const P300=plan(300,0);
+  let h=`<div class="card"><div class="row" style="justify-content:space-between"><div><h1>🏰 델포이 공성전 — 입찰 전략</h1><div class="sub">길드장 전용 · 외부 공유 금지 · 캡처 ${(D.mkt||[]).length}건 / 입찰 ${(D.bids||[]).length}건 · 마지막 ${G.length?tsK(G[G.length-1].t):"-"}</div></div><div class="row"><button class="q" id="rl">새로고침</button><button class="q" id="out">잠그기</button></div></div>
+  <div class="grid" style="margin-top:12px"><div class="kpi"><span class="l">금액 비공개 전환 (10/17 토 23:00)</span><b class="${T_HIDE-Date.now()<86400000?'red':''}">${left(T_HIDE)}</b></div><div class="kpi"><span class="l">입찰 종료 (10/18 일 00:00)</span><b class="gold">${left(T_CLOSE)}</b></div><div class="kpi"><span class="l">전투 시작 (10/18 일 20:00)</span><b>${left(T_WAR)}</b></div>
+  <div class="kpi"><span class="l">우리 입찰 ${B?"("+tsK(B.ts)+")":""}</span><b class="blu">${ours?(ours.rank+"위 · "+fmt(ours.coins)+" 주화"):"기록 없음"}</b><span class="l">${B?("3위 "+(third&&third.coins!=null?fmt(third.coins):"비공개")+" · 4위 "+(fourth&&fourth.coins!=null?fmt(fourth.coins):"비공개")+(ours&&fourth&&fourth.coins!=null&&ours.coins!=null?" · 4위와 차이 "+fmt(ours.coins-fourth.coins):"")):""}</span></div></div>
+  <div class="grid" style="margin-top:10px"><div class="kpi"><span class="l">지금 최저 원가</span><b class="gold">${best?f1(best.st.min)+"💎":"-"}</b><span class="l">${best?esc(best.it)+" · 30분 전 대비 "+delta(best.st.min,bestPrev):""}</span></div><div class="kpi"><span class="l">보이는 매물 (주화 환산)</span><b>${fmt(Math.round(totCoins))}개</b><span class="l">5품목 상위 8줄 합</span></div><div class="kpi"><span class="l">주화 300개 만들면</span><b>${P300.got>=300?fmt(Math.round(P300.spent))+"💎":"매물 부족 ("+fmt(P300.got)+"개)"}</b><span class="l">${P300.got?"평균 "+f1(P300.spent/P300.got)+"💎/개":""}</span></div><div class="kpi"><span class="l">상금</span><b>${B&&B.pool?fmt(B.pool)+"💎":"-"}</b><span class="l">${B&&B.prizes&&B.prizes.length?"1위 "+fmt(B.prizes[0])+" · 2위 "+fmt(B.prizes[1])+" · 3위 "+fmt(B.prizes[2]):""}</span></div></div></div>`;
+  // 재료비 표
+  h+=`<div class="card"><h2>💎 공성 주화 1개 재료비 (최신 캡처 기준)</h2><div style="overflow-x:auto"><table><tr><th>재료</th><th>레시피</th><th>최저 개당가</th><th>주화 1개 원가</th><th>30분 전 대비</th><th>추이(최근 12회)</th><th>보이는 매물(주화 환산)</th><th>전량 평균</th><th>캡처</th></tr>`;
+  rowsC.forEach(r=>{ if(!r.st){h+=`<tr><td>${esc(r.it)}</td><td>${RECIPE[r.it]}개</td><td colspan="7" class="sub">캡처 없음</td></tr>`;return;} const isB=best&&best.it===r.it;
+    h+=`<tr${isB?' style="color:var(--gold);font-weight:700"':''}><td>${isB?"⭐ ":""}${esc(r.it)}</td><td>${RECIPE[r.it]}개</td><td>${f2(r.st.rows[0].unit)}</td><td>${f1(r.st.min)}💎</td><td>${delta(r.st.min,r.prev?r.prev.min:null)}</td><td>${spark(r.hist.slice(-12).map(x=>x.st.min),COL[r.it])}</td><td>${f1(r.st.coins)}개${r.st.est?' <span class="tag">일부 역산</span>':''}</td><td>${f1(r.st.avg)}💎</td><td class="sub">${tsK(r.s.t)}${r.s.by?" · "+esc(r.s.by):""}</td></tr>`;});
+  h+=`</table></div><div style="margin-top:10px;font-size:13px;font-weight:700">📐 주화 1개 원가 비교 — 재료별</div>${costBars(rowsC)}<div class="sub" style="margin-top:6px">거래소는 한 화면에 싼 순서 8줄만 보이므로 「보이는 매물」은 그 8줄의 합이에요. 더 깊은 매물은 스크롤해서 추가 캡처하면 합쳐집니다. 30분마다 같은 5품목을 캡처해 주세요(같은 30분 안에 올린 캡처는 한 묶음으로 합쳐요).</div></div>`;
+  // 공급 곡선
+  h+=`<div class="card"><h2>📊 싸게 사는 순서와 총비용 (지금 보이는 매물 기준)</h2><div class="sub" style="margin-bottom:8px">싼 매물부터 차례로 산다고 할 때, 어떤 재료를 어떤 순서로 사게 되는지와 주화 N개까지의 총비용입니다.</div>${supplyCurve()}</div>`;
+  // 구매 계획
+  const P=plan(PLAN_N,0);
+  h+=`<div class="card"><h2>🧮 구매 계획 — 지금 매물로 주화 <input id="pn" type="number" value="${PLAN_N}" min="1" style="width:90px;display:inline-block;padding:4px 8px"> 개 만들기</h2>`;
+  if(!P.out.length) h+='<div class="sub">계산할 매물이 없어요.</div>'; else { h+=`<div class="row" style="margin-bottom:8px"><span class="kpi"><span class="l">만들 수 있는 주화</span><b class="${P.got<PLAN_N?'red':'grn'}">${fmt(P.got)}개</b></span><span class="kpi"><span class="l">총 비용</span><b class="gold">${fmt(Math.round(P.spent))}💎</b></span><span class="kpi"><span class="l">평균 원가</span><b>${f1(P.spent/P.got)}💎/개</b></span></div>`;
+    const byIt={}; P.out.forEach(u=>{const o=byIt[u.it]||(byIt[u.it]={qty:0,coins:0,cost:0}); o.qty+=u.qty; o.coins+=u.coins; o.cost+=u.cost;});
+    h+=`<div class="row" style="margin-bottom:10px">${Object.keys(byIt).map(it=>`<span class="tag" style="border-color:${COL[it]};color:${COL[it]}">${esc(it)} ${fmt(byIt[it].qty)}개 → 주화 ${fmt(byIt[it].coins)} · ${fmt(Math.round(byIt[it].cost))}💎</span>`).join(" ")}</div>`;
+    h+=costTimeline(G,PLAN_N);
+    h+=`<div style="margin-top:14px;font-size:13px;font-weight:700">🧾 지금 매물로 살 순서</div><div style="overflow-x:auto"><table><tr><th>순서</th><th>재료</th><th>개당가</th><th>살 수량</th><th>주화</th><th>비용</th><th>분할</th></tr>`+P.out.map((u,i)=>`<tr><td>${i+1}</td><td style="color:${COL[u.it]}">${esc(u.it)}</td><td>${f2(u.unit)}</td><td>${fmt(u.qty)}개</td><td>${fmt(u.coins)}</td><td>${fmt(Math.round(u.cost))}💎</td><td>${u.split?"가능":"전량만"}</td></tr>`).join("")+`</table></div>`;
+    if(P.got<PLAN_N) h+=`<div class="warn" style="margin-top:6px">보이는 매물로는 ${fmt(PLAN_N-P.got)}개가 모자라요 — 거래소를 더 스크롤해 캡처하거나, 다음 시간 매물을 기다리세요.</div>`; }
+  h+=`</div>`;
+  // 호가 사다리
+  h+=`<div class="card"><h2>🪜 재료별 호가 사다리 (현재 매물, 싼 순 10줄)</h2><div class="sub" style="margin-bottom:8px">막대 높이 = 그 줄을 다 사면 만들 수 있는 주화 개수 · 막대 위 숫자 = 개당 가격 · 흐린 막대 = 수량 역산</div><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">${ITEMS.map(it=>`<div>${ladder(it)}</div>`).join("")}</div></div>`;
+  // 시각별 기록표
+  h+=`<div class="card"><h2>🕒 시각별 기록 — 30분 캡처마다 가격·매물 변화</h2>${timeTable(G)}</div>`;
+  // 추이 차트
+  const SL=[...new Set(G.map(s=>s.slot))]; const minAll=Math.min(...G.map(s=>snapStats(s).min).filter(v=>v!=null));
+  h+=`<div class="card"><h2>📈 주화 1개 원가 추이 — 재료별 (캡처마다 값 · 직전 대비 %)</h2>${smallMultiples(byItem,SL,"min",{unit:"💎"})}<div style="margin-top:14px;font-size:13px;font-weight:700">한눈에 비교</div>${lineChart(ITEMS.map(it=>({name:it,color:COL[it],pts:byItem(it).filter(x=>x.st.min!=null).map(x=>[x.t,x.st.min])})),{slots:SL,labels:false,ref:isFinite(minAll)?[{v:minAll,label:"기간 최저 "+f1(minAll)}]:[]})}</div>`;
+  h+=`<div class="card"><h2>📦 보이는 매물량 추이 — 재료별 (주화 환산 개수)</h2>${smallMultiples(byItem,SL,"coins",{unit:"개",invert:true,area:true})}<div style="margin-top:14px;font-size:13px;font-weight:700">한눈에 비교</div>${lineChart(ITEMS.map(it=>({name:it,color:COL[it],pts:byItem(it).map(x=>[x.t,x.st.coins])})),{area:true,slots:SL,invert:true,labels:false})}</div>`;
+  if((D.bids||[]).length){ const pts=(D.bids||[]).map(b=>{const o=(b.ranks||[]).find(r=>/선고|군림|MZ/.test(r.name||"")); const f=(b.ranks||[]).find(r=>r.rank===4); const t3=(b.ranks||[]).find(r=>r.rank===3); return {t:new Date(b.ts).getTime(),o:o&&o.coins,f:f&&f.coins,t3:t3&&t3.coins};});
+    h+=`<div class="card"><h2>🏆 입찰 추이</h2>${lineChart([{name:"우리(선고)",color:"#8fb0e8",pts:pts.filter(p=>p.o!=null).map(p=>[p.t,p.o])},{name:"3위",color:"#f0c766",pts:pts.filter(p=>p.t3!=null).map(p=>[p.t,p.t3])},{name:"4위",color:"#ff96a3",pts:pts.filter(p=>p.f!=null).map(p=>[p.t,p.f])}],{slots:(D.bids||[]).map(b=>new Date(b.ts).getTime()),ref:[{v:500,label:"순위 반영 최소 500",color:"#8d93a3"}],invert:true})}
+    <div style="overflow-x:auto"><table style="margin-top:8px"><tr><th>시각</th><th>순위표</th><th>남은 시간</th></tr>${(D.bids||[]).slice(-8).reverse().map(b=>`<tr><td>${tsK(b.ts)}</td><td style="text-align:left;white-space:normal">${(b.ranks||[]).map(r=>r.rank+"위 "+esc(r.name)+" "+(r.coins!=null?fmt(r.coins):"비공개")).join(" · ")}</td><td>${esc(b.left||"")}</td></tr>`).join("")}</table></div></div>`; }
+  h+=dutyCard();
+  // 메모·기록
+  h+=`<div class="card"><h2>📝 전략 메모</h2><textarea id="memo" rows="8" placeholder="입찰 목표, 예산, 연합(선고·군림·MZ) 분담, 구매 타이밍…">${esc((D.memo||{}).text||"")}</textarea><div class="row" style="margin-top:8px"><button id="ms">저장</button><span class="sub">${(D.memo||{}).ts?"마지막 저장 "+tsK(D.memo.ts):""}</span><span id="mm" class="sub"></span></div></div>`;
+  h+=`<div class="card"><h2>🧾 기록</h2><div class="sub">${(D.log||[]).slice(-12).reverse().map(x=>tsK(x.ts)+" · "+esc(x.nick)+" "+esc(x.act)).join("<br>")||"없음"}</div></div>`;
+  A.innerHTML=h;
+  $("#rl").onclick=load; $("#out").onclick=()=>{try{localStorage.removeItem("sg-page")}catch(_){} api({type:"siege-page-logout",stok:STOK}).catch(()=>{}); STOK=""; location.reload();};
+  $("#pn").onchange=e=>{PLAN_N=Math.max(1,Number(e.target.value)||1); render();};
+  $("#ms").onclick=async()=>{ $("#mm").textContent="저장 중…"; try{const j=await api({type:"siege-page-memo",stok:STOK,text:$("#memo").value}); $("#mm").textContent=j&&j.ok?"저장했어요.":"실패: "+(j&&j.error);}catch(e){$("#mm").textContent="저장 실패";} };
+}
+async function load(){ $("#lock").style.display="none"; $("#app").style.display=""; render(); try{const j=await api({type:"siege-page-get",stok:STOK}); if(j&&j.ok){D=j; render(); api({type:"siege-page-duty-get",stok:STOK}).then(x=>{if(x&&x.ok){DUTY=x; render();}}).catch(()=>{});} else { STOK=""; try{localStorage.removeItem("sg-page")}catch(_){} $("#app").style.display="none"; $("#lock").style.display=""; $("#lmsg").textContent="세션이 끝났어요. 다시 입력해 주세요."; } }catch(e){ $("#app").innerHTML='<div class="card red">서버 응답 없음 — 잠시 뒤 새로고침해 주세요.</div>'; } }
+$("#go").onclick=async()=>{ const pw=$("#pw").value.trim(); if(!pw) return; $("#go").disabled=true; $("#lmsg").textContent="확인 중…";
+  try{ let dev=""; try{dev=(navigator.platform||"")+" "+(navigator.userAgent||"").slice(0,40);}catch(_){}
+    const j=await api({type:"siege-page-login",pw,dev}); if(j&&j.ok){ STOK=j.stok; try{localStorage.setItem("sg-page",JSON.stringify({stok:j.stok,exp:j.exp}))}catch(_){} load(); }
+    else $("#lmsg").textContent=({locked:"여러 번 틀려 30분 동안 잠겼어요.",bad_pw:"비밀번호가 맞지 않아요."+(j&&j.left!=null?" (남은 기회 "+j.left+"번)":""),no_pw:"비밀번호가 아직 설정되지 않았어요."})[j&&j.error]||"확인 실패"; }
+  catch(e){ $("#lmsg").textContent="서버 응답 없음"; } $("#go").disabled=false; };
+$("#pw").addEventListener("keydown",e=>{if(e.key==="Enter")$("#go").click();});
+if(STOK) load();
+</script></body></html>
